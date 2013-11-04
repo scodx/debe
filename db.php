@@ -5,8 +5,8 @@ class debe{
 
     private $host = "localhost";
     private $user = "root";
-    private $pass = "GSG2013";
-    private $db   = "rhbd_miguel"; 
+    private $pass = "";
+    private $db   = "db"; 
     private $port = 3306;
 
     private $pdo;
