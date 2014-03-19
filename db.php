@@ -4,7 +4,7 @@
 class debe{
 
 
-// cambios
+// cambios kjfkjfj
     private $host = "localhost";
     private $user = "root";
     private $pass = "";
