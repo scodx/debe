@@ -1,30 +1,42 @@
 <?php
 
 
-class debe{
+class Debe{
 
 
-// cambios kjfkjfj
-    private $host = "localhost";
-    private $user = "root";
-    private $pass = "";
-    private $db   = "db"; 
-    private $port = 3306;
+    /**
+     * Returns the queryString of the queries instead of the results
+     * @var boolean
+     */
+    private $debug = FALSE;
 
+    /**
+     * The PDO Instance
+     * @var Mixed
+     */
     private $pdo;
 
 
-    function __construct()
+
+    /**
+     * Contructor, you must pass the connection paramateres
+     * @param String  $host Host to connect to
+     * @param String  $user Database user
+     * @param String  $pass Database password
+     * @param String  $db   Database name to connect
+     * @param integer $port MySQL port, defaults to 3306
+     */
+    function __construct($host, $user, $pass, $db, $port = 3306)
     {
 
         try {
             $this->pdo = new PDO(
-                "mysql:host={$this->host};dbname={$this->db};port={$this->port}", 
-                $this->user, 
-                $this->pass
+                "mysql:host={$host};dbname={$db};port={$port}", 
+                $user, 
+                $pass
             );
         } catch (PDOException $e) {
-            print "Error!: " . $e->getMessage() . "<br/>";
+            print "Error!: " . $e->getMessage() ;
             die();
         }
 
@@ -43,12 +55,33 @@ class debe{
     }
 
 
+
+    /**
+     * Executes a custom query to the PDO instance. 
+     * You must build the query with the parameters to bind
+     * specified in the second argument ($params). It uses the 
+     * pdo prepare method to bind the parameters, so you need
+     * to write them accordingly.
+     * @param  String $sql    The query to run, For example: 
+     *                        "SELECT * FROM category"
+     * @param  Array $params  Array of parameters to bind with the query.
+     * @param  string $result Type of return value, "fetchAll" is the default, 
+     *                        returns an array of rows (for SELECT.. type sentences).
+     *                        "fetch" returns just the first row that encounters.
+     *                        "exec" returns the row count, this one is appropiate 
+     *                        for DELETE sentences.
+     *                        "insert" returns the last inserted id.
+     * @return Array          Array of results depending of the $result parameter
+     */
     public function query($sql, $params = Array(), $result = "fetchAll")
     {
 
         $cursor = $this->pdo->prepare($sql);
         $cursor->execute($params);
-        print_r($cursor);
+
+        if($this->getDebug()){
+            return $this->debug($cursor, $params);
+        }
 
         $fetch_mode = PDO::FETCH_ASSOC;
         $ret = FALSE;
@@ -142,16 +175,16 @@ class debe{
     /**
      * Finds all the records in a given table.
      * @param  string   $table      The name of the table
-     * @param  string   $select     The colums you want to get
      * @param  array    $where      An array which its key is the name of the column 
      *                              and its value the condition, for example: 
      *                              <code>$where["idcategory"] > 4</code> will search 
      *                              the record where idcateogry > 4 (if operator is equal to ">")
+     * @param  string   $select     The colums you want to get
      * @param  string   $operator   The operator where the WHERE clause will execute to. 
      * @param  string   $order      The ORDER clause, for example: " ORDER BY name ASC"
      * @return array    The results
      */
-    public function findAll($table, $select = "*", $where = Array(), $operator = "=", $order = "")
+    public function findAll($table, $where = Array(), $select = "*", $operator = "=", $order = "")
     {
 
         $query          = "SELECT {$select} FROM {$table} ";
@@ -178,20 +211,52 @@ class debe{
     }
 
 
-    public function find($table, $key, $value, $operator = "=")
+    /**
+     * Retrieves a single row from a table, given it's 
+     * key and value(along the operator). Example:
+     *<code>
+     *  $db->find("articles", "articleid" "")
+     *</code>
+     * 
+     * @param  [type] $table    [description]
+     * @param  [type] $key      [description]
+     * @param  [type] $value    [description]
+     * @param  string $operator [description]
+     * @return [type]           [description]
+     */
+    public function find($table, $conditions, $operator = "=")
     {
 
+        $query          = "SELECT * FROM {$table} WHERE ";
+        $params         = array();
+        $query_where    = array();
+
+        foreach ($conditions as $key => $value) {
+            $query_where[]= " {$key} {$operator} :{$key}";
+            $params[":{$key}"]  = $value;
+        }
+
+        $query .= implode(" AND ", $query_where) ;
+
         return $this->query(
-            "SELECT * FROM {$table} WHERE {$key} {$operator} :value ",
-            array(
-                ":value" => $value
-            ),
+            $query,
+            $params,
             "fetch"
         );
 
     }
 
 
+    /**
+     * Inserts a new row in a table
+     * @param  String $table  The table name
+     * @param  Array $values  The new values in the next form:
+     *                        array(
+     *                            "name" => "John",
+     *                            "last_name" => "Doe"
+     *                        )
+     * @return Int            The last ID of the columns inserted
+     */
     public function insert($table, $values)
     {
 
@@ -216,7 +281,18 @@ class debe{
     }
 
 
-
+    /**
+     * Updates rows from a table, the new values are passed in
+     * the second parameter ($valuers)
+     * @param  String $table    The table name
+     * @param  Array $values    The colums and ther new values
+     * @param  Array $where     The conditions that the UPDATE must accept in order 
+     *                          to execute correclty in an array form, like 
+     *                          array("id" => 9) equals to "WHERE id = 9" IF 
+     *                          $operator is "="
+     * @param  string $operator Operator to concatenate in the condition
+     * @return Int              Number of rows updated
+     */
     public function update($table, $values, $where, $operator = "=")
     {
 
@@ -271,6 +347,43 @@ class debe{
             "exec" 
         );
 
+    }
+
+
+    /**
+     * Builds an array for debugging purpuses, containing
+     * the query and the parameters.
+     * @param  Mixed $PDOStatement The cursor object of PDO
+     * @param  Array $params       Array of parameters
+     * @return Array               Array of data
+     */
+    private function debug($PDOStatement, $params)
+    {
+        return array(
+            "queryString" => $PDOStatement->queryString,
+            "params" => $params
+        );
+    }
+
+
+    /**
+     * Sets the debug status
+     * @param Boolean $debug Status of the debug state
+     */
+    public function setDebug($debug)
+    {
+        $this->debug = $debug;
+        return $this;
+    }
+
+
+    /**
+     * Returns de debug status
+     * @return Boolean The debug status
+     */
+    public function getDebug()
+    {
+        return $this->debug;
     }
 
     
