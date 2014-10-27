@@ -35,6 +35,7 @@ class Debe{
                 $user, 
                 $pass
             );
+            $this->pdo->exec("SET NAMES 'utf8';");
         } catch (PDOException $e) {
             print "Error!: " . $e->getMessage() ;
             die();
@@ -54,6 +55,16 @@ class Debe{
         return $this->pdo;
     }
 
+
+    /**
+     * Executes a simple query throug the pdo exec() method
+     * @param  [type] $query [description]
+     * @return [type]        [description]
+     */
+    public function exec($query)
+    {
+        return $this->pdo->exec($query);
+    }
 
 
     /**
