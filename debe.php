@@ -90,7 +90,7 @@ class Debe{
         $cursor = $this->pdo->prepare($sql);
         $cursor->execute($params);
 
-        if($this->getDebug()){
+        if($this->getDebugState()){
             return $this->debug($cursor, $params);
         }
 
@@ -381,7 +381,7 @@ class Debe{
      * Sets the debug status
      * @param Boolean $debug Status of the debug state
      */
-    public function setDebug($debug)
+    public function setDebugState($debug)
     {
         $this->debug = $debug;
         return $this;
@@ -392,7 +392,7 @@ class Debe{
      * Returns de debug status
      * @return Boolean The debug status
      */
-    public function getDebug()
+    public function getDebugState()
     {
         return $this->debug;
     }
