@@ -20,7 +20,7 @@ class Debe{
   /**
    * @var bool
    */
-  private $setUTF8 = true;
+  private $UTF8Setting = true;
 
   /**
    * @return bool
@@ -32,42 +32,20 @@ class Debe{
 
   /**
    * @param bool $debug
+   * @return Debe
    */
   public function setDebug ($debug)
   {
     $this->debug = $debug;
-  }
-
-  /**
-   * @return mixed
-   */
-  public function getPdo ()
-  {
-    return $this->pdo;
-  }
-
-  /**
-   * @param mixed $pdo
-   */
-  public function setPdo ($pdo)
-  {
-    $this->pdo = $pdo;
-  }
-
-  /**
-   * @return bool
-   */
-  public function getSetUTF8 ()
-  {
-    return $this->setUTF8;
+    return $this;
   }
 
   /**
    * @param bool $setUTF8
    */
-  public function setUTF8 ($setUTF8)
+  public function setUTF8 ($setUTF8 = true)
   {
-    $this->setUTF8 = $setUTF8;
+    $this->UTF8Setting = $setUTF8;
     $this->pdo->exec("SET NAMES 'utf8';");
   }
 
@@ -88,7 +66,7 @@ class Debe{
         $user,
         $pass
       );
-      $this->setSetUTF8();
+      $this->setUTF8();
     } catch (PDOException $e) {
       print "Error!: " . $e->getMessage() ;
       die();
@@ -96,11 +74,10 @@ class Debe{
 
   }
 
-
   /**
    * Return the PDO Instance, since this is just a little
    * class/helper/wrapper around PDO, maybe you need to
-   * execute certains methods.
+   * execute certain methods.
    * @return Mixed The PDO Instance
    */
   public function getPDOInstance()
@@ -137,7 +114,7 @@ class Debe{
    *                        "insert" returns the last inserted id.
    * @return Array          Array of results depending of the $result parameter
    */
-  public function query($sql, $params = Array(), $result = "fetchAll")
+  public function query($sql, $params = [], $result = "fetchAll")
   {
 
     $cursor = $this->pdo->prepare($sql);
@@ -168,7 +145,6 @@ class Debe{
     }
 
     return $ret;
-
   }
 
 
@@ -185,8 +161,8 @@ class Debe{
    *                              For example: "SELECT * FROM category"
    * @param  array   $params      Array of parameters to bind with the main query.
    * @param  integer $page        Number of the page that the function will return. Default is 1
-   * @param  integer $num         Number of the rows that the function will return. Default is 10
-   * @param  string  $count_query A query that once executed will return the total rows
+   * @param  integer $num_rows    Number of the rows that the function will return. Default is 10
+   * @param  mixed  $count_query A query that once executed will return the total rows
    *                              of the main query without the LIMIT clauses. Must be a
    *                              query like: "SELECT count(*) as count FROM category".
    *                              Notice the alias (" as count "), the function will search
@@ -194,7 +170,7 @@ class Debe{
    *                              the main query, except for the count function. Ideally, you
    *                              should include the least columns as possible since you are
    *                              only counting the rows, not displaying them.
-   * @return array                An array with the folowing keys and values:
+   * @return array                An array with the following keys and values:
    *                              <code>
    *                                  [total_pages]   = The number of pages the pager detected.
    *                                  [page]          = The current page the pager is in.
@@ -211,8 +187,6 @@ class Debe{
   )
   {
 
-    $count = 0;
-
     if($count_query){
       $tmp_count = $this->query($count_query, $params, "fetch");
       $count = $tmp_count['count'];
@@ -226,12 +200,12 @@ class Debe{
 
     $total_pages = (int)ceil($count / $num_rows);
 
-    return array(
+    return [
       "total_pages"   => $total_pages,
       "page"          => $page,
       "rows"          => count($data),
       "data"          => $data,
-    );
+    ];
 
   }
 
@@ -248,7 +222,7 @@ class Debe{
    * @param  string   $order      The ORDER clause, for example: " ORDER BY name ASC"
    * @return array    The results
    */
-  public function findAll($table, $where = Array(), $select = "*", $operator = "=", $order = "")
+  public function findAll($table, $where = [], $select = "*", $operator = "=", $order = "")
   {
 
     $query          = "SELECT {$select} FROM {$table} ";
@@ -282,11 +256,10 @@ class Debe{
    *  $db->find("articles", "articleid" "")
    *</code>
    *
-   * @param  [type] $table    [description]
-   * @param  [type] $key      [description]
-   * @param  [type] $value    [description]
+   * @param         $table
+   * @param         $conditions
    * @param  string $operator [description]
-   * @return [type]           [description]
+   * @return array [type]           [description]
    */
   public function find($table, $conditions, $operator = "=")
   {
@@ -313,21 +286,34 @@ class Debe{
 
   /**
    * Inserts a new row in a table
-   * @param  String $table  The table name
-   * @param  Array $values  The new values in the next form:
-   *                        array(
+   * @param  String $table      The table name
+   * @param  Array  $values     The new values in the next form:
+   *                            [
    *                            "name" => "John",
    *                            "last_name" => "Doe"
-   *                        )
-   * @return Int            The last ID of the columns inserted
+   *                            ]
+   *                            or
+   *                            [
+   *                              [
+   *                                "name" => "John",
+   *                                "last_name" => "Doe"
+   *                              ],
+   *                              [
+   *                                "name" => "John",
+   *                                "last_name" => "Doe"
+   *                              ]
+   *                            ]
+   *                            for multiple values
+   *
+   * @return array The last ID of the columns inserted
    */
-  public function insert($table, $values)
+  public function insert($table, Array $values)
   {
 
     $query          = "INSERT INTO {$table} ";
-    $query_keys     = array();
-    $query_values   = array();
-    $params         = array();
+    $query_keys     = [];
+    $query_values   = [];
+    $params         = [];
 
     foreach ($values as $key => $value) {
       $params[":{$key}"]  = $value;
@@ -401,7 +387,7 @@ class Debe{
     $params     = array();
     $where_key  = key($where);
 
-    $params[":{$where_key}"]    = $where[$where_key];
+    $params[":{$where_key}"] = $where[$where_key];
 
     $query .= " WHERE {$where_key} {$operator} :{$where_key} ";
 
