@@ -1,9 +1,15 @@
 <?php
 
+namespace scodx;
+
 /**
  * Class Debe
  */
 class Debe{
+
+  const FETCH_ARRAY = \PDO::FETCH_ASSOC;
+
+  const FETCH_OBJ = \PDO::FETCH_OBJ;
 
   /**
    * Returns the queryString of the queries instead of the results
@@ -18,9 +24,16 @@ class Debe{
   private $pdo;
 
   /**
+   * Defines if we are in debug mode
    * @var bool
    */
   private $UTF8Setting = true;
+
+  /**
+   * Defines the fetch mode
+   * @var int
+   */
+  private $fetchMode = self::FETCH_OBJ;
 
   /**
    * @return bool
@@ -41,6 +54,19 @@ class Debe{
   }
 
   /**
+   * Constructor, you must pass the connection parameters
+   * @param String  $host Host to connect to
+   * @param String  $db   Database name to connect
+   * @param String  $user Database user
+   * @param String  $pass Database password
+   * @param integer $port MySQL port, defaults to 3306
+   */
+  function __construct ($host, $db, $user, $pass, $port = 3306)
+  {
+    $this->connect($host, $db, $user, $pass, $port);
+  }
+
+  /**
    * @param bool $setUTF8
    */
   public function setUTF8 ($setUTF8 = true)
@@ -50,28 +76,44 @@ class Debe{
   }
 
   /**
-   * Constructor, you must pass the connection parameters
-   * @param String  $host Host to connect to
-   * @param String  $user Database user
-   * @param String  $pass Database password
-   * @param String  $db   Database name to connect
-   * @param integer $port MySQL port, defaults to 3306
+   * @return int
    */
-  function __construct($host, $user, $pass, $db, $port = 3306)
+  public function getFetchMode ()
   {
+    return $this->fetchMode;
+  }
 
+  /**
+   * @param int $fetchMode
+   */
+  public function setFetchMode ($fetchMode)
+  {
+    $this->fetchMode = $fetchMode;
+  }
+
+  /**
+   * Makes a connection to the db, then stores the PDO instance to $this->pdo for further use
+   * @param     $host
+   * @param     $db
+   * @param     $user
+   * @param     $pass
+   * @param int $port
+   */
+  public function connect($host, $db, $user, $pass, $port = 3306)
+  {
     try {
-      $this->pdo = new PDO(
+      $this->pdo = new \PDO(
         "mysql:host={$host};dbname={$db};port={$port}",
         $user,
         $pass
       );
-      $this->setUTF8();
+
+      if ($this->UTF8Setting) {
+        $this->setUTF8();
+      }
     } catch (PDOException $e) {
       print "Error!: " . $e->getMessage() ;
-      die();
     }
-
   }
 
   /**
@@ -85,7 +127,6 @@ class Debe{
     return $this->pdo;
   }
 
-
   /**
    * Executes a simple query throug the pdo exec() method
    * @param  [type] $query [description]
@@ -95,8 +136,7 @@ class Debe{
   {
     return $this->pdo->exec($query);
   }
-
-
+  
   /**
    * Executes a custom query to the PDO instance.
    * You must build the query with the parameters to bind
@@ -112,7 +152,7 @@ class Debe{
    *                        "exec" returns the row count, this one is appropiate
    *                        for DELETE sentences.
    *                        "insert" returns the last inserted id.
-   * @return Array          Array of results depending of the $result parameter
+   * @return array          Array of results depending of the $result parameter
    */
   public function query($sql, $params = [], $result = "fetchAll")
   {
@@ -124,7 +164,7 @@ class Debe{
       return $this->debug($cursor, $params);
     }
 
-    $fetch_mode = PDO::FETCH_ASSOC;
+    $fetch_mode = $this->getFetchMode();
     $ret = FALSE;
 
     switch ($result) {
@@ -146,7 +186,6 @@ class Debe{
 
     return $ret;
   }
-
 
   /**
    * Function that paginate a query. You must pass at least the whole query,
@@ -209,45 +248,25 @@ class Debe{
 
   }
 
-
   /**
    * Finds all the records in a given table.
-   * @param  string   $table      The name of the table
-   * @param  array    $where      An array which its key is the name of the column
-   *                              and its value the condition, for example:
-   *                              <code>$where["idcategory"] > 4</code> will search
-   *                              the record where idcateogry > 4 (if operator is equal to ">")
-   * @param  string   $select     The colums you want to get
-   * @param  string   $operator   The operator where the WHERE clause will execute to.
-   * @param  string   $order      The ORDER clause, for example: " ORDER BY name ASC"
-   * @return array    The results
+   * @param string $table The name of the table
+   * @param string $sql
+   * @param array  $params
+   * @param string $columns
+   * @return array The results
    */
-  public function findAll($table, $where = [], $select = "*", $operator = "=", $order = "")
+  public function findAll($table, $sql = '', $params = [], $columns = '*')
   {
+    $query = "SELECT {$columns} FROM {$table} ";
 
-    $query          = "SELECT {$select} FROM {$table} ";
-    $params         = array();
-    $where_query    = "";
-    $order_query    = "";
-
-
-    if(!empty($where)){
-      $where_key                  = key($where);
-      $params[":{$where_key}"]    = $where[$where_key];
-      $where_query                = " WHERE {$where_key} {$operator} :{$where_key} ";
+    if (!empty($sql)) {
+      $query .= ' WHERE ' . $sql;
     }
 
-    if(!empty($order)){
-      $order_query        = "ORDER BY {$order}";
-    }
-
-    return $this->query(
-      $query . $where_query . $order_query,
-      $params
-    );
+    return $this->query($query, $params);
 
   }
-
 
   /**
    * Retrieves a single row from a table, given it's
@@ -264,9 +283,9 @@ class Debe{
   public function find($table, $conditions, $operator = "=")
   {
 
-    $query          = "SELECT * FROM {$table} WHERE ";
-    $params         = array();
-    $query_where    = array();
+    $query = "SELECT * FROM {$table} WHERE ";
+    $params = array();
+    $query_where = array();
 
     foreach ($conditions as $key => $value) {
       $query_where[]= " {$key} {$operator} :{$key}";
@@ -282,7 +301,6 @@ class Debe{
     );
 
   }
-
 
   /**
    * Inserts a new row in a table
@@ -330,7 +348,6 @@ class Debe{
 
   }
 
-
   /**
    * Updates rows from a table, the new values are passed in
    * the second parameter ($valuers)
@@ -368,8 +385,6 @@ class Debe{
 
   }
 
-
-
   /**
    * Deletes a record from a given table.
    * @param  string $table    The name of the table
@@ -399,33 +414,55 @@ class Debe{
 
   }
 
-
   /**
-   * Builds an array for debugging purpuses, containing
-   * the query and the parameters.
+   * Builds an array for debugging purposes, containing
+   * the query and the parameters. It constructs the query, I
+   * IT IS NOT the same query that it is being sent to the DB,
+   * that's how PDO and prepared statements work
    * @param  Mixed $PDOStatement The cursor object of PDO
    * @param  Array $params       Array of parameters
-   * @return Array               Array of data
+   * @return array
    */
-  private function debug($PDOStatement, $params)
+  private function debug($PDOStatement, Array $params)
   {
-    return array(
-      "queryString" => $PDOStatement->queryString,
-      "params" => $params
-    );
+    return [
+      'query'       => $this->interpolateQuery($PDOStatement->queryString, $params),
+      'queryString' => $PDOStatement->queryString,
+      'params'      => $params
+    ];
+  }
+
+  /**
+   * Replaces any parameter placeholders in a query with the value of that
+   * parameter. Useful for debugging. Assumes anonymous parameters from
+   * $params are are in the same order as specified in $query
+   *
+   * @param string $query The sql query with parameter placeholders
+   * @param array $params The array of substitution parameters
+   * @return string The interpolated query
+   */
+  public function interpolateQuery($query, $params) {
+
+    array_walk($params, function(&$value, $key){
+      $value = $this->pdo->quote($value);
+    });
+
+    $query = strtr($query, $params);
+
+    return $query;
   }
 
 
   /**
    * Sets the debug status
    * @param Boolean $debug Status of the debug state
+   * @return $this
    */
   public function setDebugState($debug)
   {
     $this->debug = $debug;
     return $this;
   }
-
 
   /**
    * Returns de debug status
@@ -436,6 +473,32 @@ class Debe{
     return $this->debug;
   }
 
+  /**
+   * Begins PDO transaction
+   * @return mixed
+   */
+  public function beginTransaction ()
+  {
+    return $this->pdo->beginTransaction();
+  }
+
+  /**
+   * Commits PDO transaction
+   * @return mixed
+   */
+  public function commit ()
+  {
+    return $this->pdo->commit();
+  }
+
+  /**
+   * Rollback PDO transaction
+   * @return mixed
+   */
+  public function rollBack ()
+  {
+    return $this->pdo->rollBack();
+  }
 
 }
 
