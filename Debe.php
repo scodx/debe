@@ -2,14 +2,17 @@
 
 namespace scodx;
 
+use PDO;
+use PDOException;
+
 /**
  * Class Debe
  */
 class Debe{
 
-  const FETCH_ARRAY = \PDO::FETCH_ASSOC;
+  const FETCH_ARRAY = PDO::FETCH_ASSOC;
 
-  const FETCH_OBJ = \PDO::FETCH_OBJ;
+  const FETCH_OBJ = PDO::FETCH_OBJ;
 
   /**
    * Returns the queryString of the queries instead of the results
@@ -69,10 +72,12 @@ class Debe{
   /**
    * @param bool $setUTF8
    */
-  public function setUTF8 ($setUTF8 = true)
+  public function setUTF8 ($setUTF8)
   {
     $this->UTF8Setting = $setUTF8;
-    $this->pdo->exec("SET NAMES 'utf8';");
+    if ($setUTF8) {
+      $this->pdo->exec("SET NAMES 'utf8';");
+    }
   }
 
   /**
@@ -102,17 +107,17 @@ class Debe{
   public function connect($host, $db, $user, $pass, $port = 3306)
   {
     try {
-      $this->pdo = new \PDO(
+      $this->pdo = new PDO(
         "mysql:host={$host};dbname={$db};port={$port}",
         $user,
         $pass
       );
 
       if ($this->UTF8Setting) {
-        $this->setUTF8();
+        $this->setUTF8(true);
       }
     } catch (PDOException $e) {
-      print "Error!: " . $e->getMessage() ;
+      throw $e;
     }
   }
 
@@ -128,60 +133,65 @@ class Debe{
   }
 
   /**
-   * Executes a simple query throug the pdo exec() method
-   * @param  [type] $query [description]
-   * @return [type]        [description]
+   * Executes a simple query through the pdo exec() method
+   * @param  string $query The query to execute
+   * @return int The number of rows affected by the query
    */
   public function exec($query)
   {
     return $this->pdo->exec($query);
   }
-  
+
   /**
    * Executes a custom query to the PDO instance.
    * You must build the query with the parameters to bind
    * specified in the second argument ($params). It uses the
    * pdo prepare method to bind the parameters, so you need
    * to write them accordingly.
-   * @param  String $sql    The query to run, For example:
+   * @param String $sql      The query to run, For example:
    *                        "SELECT * FROM category"
-   * @param  Array $params  Array of parameters to bind with the query.
-   * @param  string $result Type of return value, "fetchAll" is the default,
+   * @param array  $params   Array of parameters to bind with the query.
+   * @param string $execType Type of return value, "fetchAll" is the default,
    *                        returns an array of rows (for SELECT.. type sentences).
    *                        "fetch" returns just the first row that encounters.
-   *                        "exec" returns the row count, this one is appropiate
+   *                        "exec" returns the row count, this one is appropriate
    *                        for DELETE sentences.
    *                        "insert" returns the last inserted id.
    * @return array          Array of results depending of the $result parameter
    */
-  public function query($sql, $params = [], $result = "fetchAll")
+  public function query($sql, $params = [], $execType = 'fetchAll')
   {
 
-    $cursor = $this->pdo->prepare($sql);
-    $cursor->execute($params);
-
-    if($this->getDebugState()){
-      return $this->debug($cursor, $params);
-    }
-
-    $fetch_mode = $this->getFetchMode();
     $ret = FALSE;
 
-    switch ($result) {
-      case 'fetch':
-        $ret = $cursor->fetch($fetch_mode);
-        break;
-      case 'exec':
-        $ret = $cursor->rowCount();
-        $cursor->fetchAll();
-        break;
-      case 'insert':
-        $ret = $this->pdo->lastInsertId();
-        break;
-      case 'fetchAll':
-      default:
-        $ret = $cursor->fetchAll($fetch_mode);
-        break;
+    try {
+      $cursor = $this->pdo->prepare($sql);
+      $cursor->execute($params);
+
+      if($this->getDebugState()){
+        return $this->debug($cursor, $params);
+      }
+
+      $fetch_mode = $this->getFetchMode();
+
+        switch ($execType) {
+          case 'fetch':
+            $ret = $cursor->fetch($fetch_mode);
+            break;
+          case 'exec':
+            $ret = $cursor->rowCount();
+            $cursor->fetchAll();
+            break;
+          case 'insert':
+            $ret = $this->pdo->lastInsertId();
+            break;
+          case 'fetchAll':
+          default:
+            $ret = $cursor->fetchAll($fetch_mode);
+            break;
+        }
+    } catch (PDOException $e) {
+      throw $e;
     }
 
     return $ret;
@@ -219,7 +229,7 @@ class Debe{
    */
   public function queryPager(
     $sql,
-    $params         = Array(),
+    $params         = [],
     $page           = 1,
     $num_rows       = 10,
     $count_query    = FALSE
@@ -240,10 +250,10 @@ class Debe{
     $total_pages = (int)ceil($count / $num_rows);
 
     return [
-      "total_pages"   => $total_pages,
-      "page"          => $page,
-      "rows"          => count($data),
-      "data"          => $data,
+      'total_pages' => $total_pages,
+      'page'        => $page,
+      'rows'        => count($data),
+      'data'        => $data,
     ];
 
   }
@@ -265,84 +275,90 @@ class Debe{
     }
 
     return $this->query($query, $params);
-
   }
 
   /**
    * Retrieves a single row from a table, given it's
    * key and value(along the operator). Example:
    *<code>
-   *  $db->find("articles", "articleid" "")
+   *  $db->find("articles", 'revision_id = :revision_id', [':revision_id' => '247'])
    *</code>
    *
    * @param         $table
-   * @param         $conditions
-   * @param  string $operator [description]
+   * @param string  $sql
+   * @param array   $params
+   * @param string  $columns
    * @return array [type]           [description]
    */
-  public function find($table, $conditions, $operator = "=")
+  public function find($table, $sql = '', $params = [], $columns = '*')
   {
+    $query = "SELECT {$columns} FROM {$table} ";
 
-    $query = "SELECT * FROM {$table} WHERE ";
-    $params = array();
-    $query_where = array();
-
-    foreach ($conditions as $key => $value) {
-      $query_where[]= " {$key} {$operator} :{$key}";
-      $params[":{$key}"]  = $value;
+    if (!empty($sql)) {
+      $query .= ' WHERE ' . $sql;
     }
 
-    $query .= implode(" AND ", $query_where) ;
-
-    return $this->query(
-      $query,
-      $params,
-      "fetch"
-    );
-
+    return $this->query($query . ' LIMIT 1 ', $params, 'fetch');
   }
 
   /**
    * Inserts a new row in a table
-   * @param  String $table      The table name
-   * @param  Array  $values     The new values in the next form:
-   *                            [
-   *                            "name" => "John",
-   *                            "last_name" => "Doe"
-   *                            ]
-   *                            or
-   *                            [
-   *                              [
+   * @param String $table           The table name
+   * @param array  $values          The new values in the next form:
+   *                                [
    *                                "name" => "John",
    *                                "last_name" => "Doe"
-   *                              ],
-   *                              [
+   *                                ]
+   *                                or
+   *                                [
+   *                                [
    *                                "name" => "John",
    *                                "last_name" => "Doe"
-   *                              ]
-   *                            ]
-   *                            for multiple values
+   *                                ],
+   *                                [
+   *                                "name" => "John",
+   *                                "last_name" => "Doe"
+   *                                ]
+   *                                ]
+   *                                for multiple values
    *
    * @return array The last ID of the columns inserted
    */
   public function insert($table, Array $values)
   {
 
-    $query          = "INSERT INTO {$table} ";
-    $query_keys     = [];
-    $query_values   = [];
-    $params         = [];
+    $query = "INSERT INTO {$table} ";
+    $columns = [];
+    $params = [];
+    $pdoParams = [];
+    $valuesArr = [];
 
     foreach ($values as $key => $value) {
-      $params[":{$key}"]  = $value;
+      // if this is an array of arrays...
+      if (is_array($value) && !empty($value)) {
+        $columns = array_keys($value);
+        foreach ($value as $k => $v) {
+          $param_key = ":{$k}_{$key}";
+          $params[$key][$param_key] = $v;
+          $pdoParams[$param_key] = $v;
+        }
+      } else {
+        $columns = array_keys($values);
+        $params[0][":{$key}"] = $value;
+      }
     }
 
-    $query .= "(" . implode(", ", array_keys($values)) . ")" ;
-    $query .= " VALUES( ". implode(", ", array_keys($params)) .")";
+    $query .= '(' . implode(', ', $columns) . ') VALUES ';
+
+    foreach ($params as $param) {
+      $valuesArr[] = '( ' . implode(', ', array_keys($param)) . ' )';
+    }
+
+    $query .= implode(', ', $valuesArr);
 
     return $this->query(
       $query,
-      $params,
+      $pdoParams,
       "insert"
     );
 
@@ -352,7 +368,7 @@ class Debe{
    * Updates rows from a table, the new values are passed in
    * the second parameter ($valuers)
    * @param  String $table    The table name
-   * @param  Array $values    The colums and ther new values
+   * @param  Array $values    The columns and their new values
    * @param  Array $where     The conditions that the UPDATE must accept in order
    *                          to execute correclty in an array form, like
    *                          array("id" => 9) equals to "WHERE id = 9" IF
@@ -441,24 +457,20 @@ class Debe{
    * @param array $params The array of substitution parameters
    * @return string The interpolated query
    */
-  public function interpolateQuery($query, $params) {
-
+  public function interpolateQuery ($query, $params) {
     array_walk($params, function(&$value, $key){
       $value = $this->pdo->quote($value);
     });
-
     $query = strtr($query, $params);
-
     return $query;
   }
-
 
   /**
    * Sets the debug status
    * @param Boolean $debug Status of the debug state
    * @return $this
    */
-  public function setDebugState($debug)
+  public function setDebugState ($debug)
   {
     $this->debug = $debug;
     return $this;
@@ -468,7 +480,7 @@ class Debe{
    * Returns de debug status
    * @return Boolean The debug status
    */
-  public function getDebugState()
+  public function getDebugState ()
   {
     return $this->debug;
   }
